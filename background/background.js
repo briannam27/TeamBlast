@@ -109,6 +109,12 @@ async function checkSender(sender, body) {
   const senderLower = sender.toLowerCase();
   const bodyLower = body.toLowerCase();
   
+  // NEW: Extract "tag off" signature from body
+  const tagOffMismatch = detectTagOffMismatch(sender, body);
+  if (tagOffMismatch) {
+    warnings.push(tagOffMismatch);
+  }
+  
   // Check for company impersonation
   const companies = {
     'paypal': '@paypal.com',
@@ -117,7 +123,10 @@ async function checkSender(sender, body) {
     'microsoft': '@microsoft.com',
     'google': '@google.com',
     'facebook': '@facebook.com',
-    'netflix': '@netflix.com'
+    'netflix': '@netflix.com',
+    'bank of america': '@bankofamerica.com',
+    'wells fargo': '@wellsfargo.com',
+    'chase': '@chase.com'
   };
   
   for (const [company, domain] of Object.entries(companies)) {
@@ -132,6 +141,158 @@ async function checkSender(sender, body) {
   }
   
   return { type: 'sender', warnings };
+}
+
+function detectTagOffMismatch(sender, body) {
+  // Common sign-off patterns in emails
+  const signOffPatterns = [
+    // "Thanks, John Smith" or "Best regards, John Smith"
+    /(?:thanks|regards|sincerely|best|cheers|respectfully),?\s*\n?\s*([a-z\s.'-]+)/gi,
+    
+    // "- John Smith" or "-- John Smith"
+    /^-{1,2}\s*([a-z\s.'-]+)$/gim,
+    
+    // "Sent from John Smith" 
+    /sent\s+(?:from|by)\s+([a-z\s.'-]+)/gi,
+    
+    // Email signatures like "John Smith | Company"
+    /^([a-z\s.'-]+)\s*\|/gim,
+    
+    // Phone numbers followed by names
+    /\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n\s*([a-z\s.'-]+)/gi
+  ];
+  
+  let signOffName = null;
+  
+  // Try to find a sign-off name in the email body
+  for (const pattern of signOffPatterns) {
+    const match = pattern.exec(body);
+    if (match && match[1]) {
+      const name = match[1].trim();
+      
+      // Filter out common false positives
+      const excludeWords = [
+        'team', 'support', 'service', 'department', 'company', 
+        'us', 'me', 'you', 'your', 'our', 'the', 'customer',
+        'account', 'payment', 'invoice', 'order', 'security'
+      ];
+      
+      const nameLower = name.toLowerCase();
+      const isExcluded = excludeWords.some(word => nameLower === word || nameLower.includes(word + ' '));
+      
+      // Must be between 2-50 characters and contain at least 2 words (first + last name)
+      if (!isExcluded && name.length > 2 && name.length < 50 && name.includes(' ')) {
+        signOffName = name;
+        break;
+      }
+    }
+  }
+  
+  if (!signOffName) {
+    return null; // No sign-off detected
+  }
+  
+  // Extract name from sender email address
+  // Examples: "John Smith <john@example.com>" or just "john@example.com"
+  let senderName = null;
+  
+  // Check for display name format: "Display Name <email@domain.com>"
+  const displayNameMatch = sender.match(/^([^<]+)\s*</);
+  if (displayNameMatch) {
+    senderName = displayNameMatch[1].trim();
+  } else {
+    // Extract from email address: john.smith@example.com → John Smith
+    const emailMatch = sender.match(/^([^@]+)@/);
+    if (emailMatch) {
+      const username = emailMatch[1];
+      // Convert john.smith or john_smith to John Smith
+      senderName = username
+        .replace(/[._-]/g, ' ')
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    }
+  }
+  
+  if (!senderName) {
+    return null;
+  }
+  
+  // Compare names (normalize for comparison)
+  const normalizeName = (name) => {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z\s]/g, '') // Remove punctuation
+      .replace(/\s+/g, ' ')      // Normalize spaces
+      .trim();
+  };
+  
+  const normalizedSender = normalizeName(senderName);
+  const normalizedSignOff = normalizeName(signOffName);
+  
+  // Check if names match
+  // Allow partial matches (e.g., "John Smith" matches "John A. Smith")
+  const senderWords = normalizedSender.split(' ');
+  const signOffWords = normalizedSignOff.split(' ');
+  
+  // Check if at least first and last name match
+  const firstNameMatch = senderWords[0] === signOffWords[0];
+  const lastNameMatch = senderWords[senderWords.length - 1] === signOffWords[signOffWords.length - 1];
+  
+  if (firstNameMatch && lastNameMatch) {
+    return null; // Names match - all good
+  }
+  
+  // Check if it's a similar name (fuzzy match)
+  const similarity = calculateSimilarity(normalizedSender, normalizedSignOff);
+  if (similarity > 0.7) {
+    return null; // Close enough
+  }
+  
+  // Names don't match!
+  return `Email is signed as "${signOffName}" but sender shows as "${senderName}" - this is suspicious!`;
+}
+
+// Helper function to calculate string similarity
+function calculateSimilarity(str1, str2) {
+  const longer = str1.length > str2.length ? str1 : str2;
+  const shorter = str1.length > str2.length ? str2 : str1;
+  
+  if (longer.length === 0) {
+    return 1.0;
+  }
+  
+  const editDistance = levenshteinDistance(longer, shorter);
+  return (longer.length - editDistance) / longer.length;
+}
+
+// Levenshtein distance algorithm
+function levenshteinDistance(str1, str2) {
+  const matrix = [];
+  
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
 }
 
 async function analyzeContent(text) {
