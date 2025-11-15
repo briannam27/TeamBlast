@@ -30,6 +30,13 @@ function updateStats(isThreat) {
 }
 
 async function analyzeEmailSafety(emailData) {
+  // DEBUG: Log what we're receiving
+  console.log('Analyzing email:', {
+    sender: emailData.sender,
+    subject: emailData.subject,
+    linkCount: emailData.links?.length || 0
+  });
+  
   const checks = await Promise.all([
     checkLinks(emailData.links),
     checkSender(emailData.sender, emailData.body),
@@ -93,6 +100,14 @@ async function checkLinks(links) {
         });
       }
       
+      // *** NEW: Check for random-looking subdomains with numbers ***
+      if (/[a-z]{6,}-\d+-\d+/.test(url.hostname)) {
+        suspicious.push({
+          link,
+          reason: 'Domain contains random-looking generated text'
+        });
+      }
+      
     } catch (e) {
       suspicious.push({
         link,
@@ -109,15 +124,35 @@ async function checkSender(sender, body) {
   const senderLower = sender.toLowerCase();
   const bodyLower = body.toLowerCase();
   
-  // Check for company impersonation
+  // Check for free email providers
+  const freeEmailProviders = ['@gmail.com', '@yahoo.com', '@hotmail.com', '@outlook.com', '@aol.com'];
+  if (freeEmailProviders.some(provider => senderLower.includes(provider))) {
+    warnings.push('Sender uses a free personal email account, not a business domain');
+  }
+  
+  // Check for hosting platforms being abused
+  const hostingPlatforms = ['firebaseapp.com', 'herokuapp.com', 'netlify.app', 'vercel.app', 'github.io'];
+  if (hostingPlatforms.some(platform => senderLower.includes(platform))) {
+    warnings.push('Sender uses a website hosting platform, not a business email domain');
+  }
+  
+  // Check for company impersonation (EXPANDED LIST)
   const companies = {
+    'aaa': '@aaa.com',
     'paypal': '@paypal.com',
     'amazon': '@amazon.com',
     'apple': '@apple.com',
     'microsoft': '@microsoft.com',
     'google': '@google.com',
     'facebook': '@facebook.com',
-    'netflix': '@netflix.com'
+    'netflix': '@netflix.com',
+    'bank of america': '@bankofamerica.com',
+    'wells fargo': '@wellsfargo.com',
+    'chase': '@chase.com',
+    'irs': '@irs.gov',
+    'usps': '@usps.com',
+    'fedex': '@fedex.com',
+    'ups': '@ups.com'
   };
   
   for (const [company, domain] of Object.entries(companies)) {
@@ -205,13 +240,15 @@ function calculateSafetyScore(checks) {
   
   checks.forEach(check => {
     if (check.type === 'links' && check.suspicious.length > 0) {
-      score -= check.suspicious.length * 15;
+      score -= check.suspicious.length * 20; // Increased from 15
     }
     if (check.type === 'sender' && check.warnings.length > 0) {
-      score -= check.warnings.length * 20;
+      score -= check.warnings.length * 25; // Increased from 20
     }
     if (check.type === 'content' && check.redFlags.length > 0) {
-      score -= check.redFlags.length * 10;
+      // More aggressive scoring for multiple red flags
+      const penalty = check.redFlags.length > 3 ? 15 : 10;
+      score -= check.redFlags.length * penalty;
     }
   });
   
