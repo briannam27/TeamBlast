@@ -1,4 +1,4 @@
-// background/background.js - COMPLETE VERSION
+importScripts('background/safeBrowsing.js');
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'analyzeEmail') {
@@ -29,11 +29,31 @@ function updateStats(isThreat) {
   });
 }
 
+<<<<<<< Updated upstream
 async function analyzeEmailSafety(emailData) {
   const checks = await Promise.all([
     checkLinks(emailData.links),
     checkSender(emailData.sender, emailData.body),
     analyzeContent(emailData.subject + ' ' + emailData.body)
+=======
+async function analyzeEmailSafety(emailData = {}) {
+  const subject = emailData.subject || '';
+  const body = emailData.body || '';
+  const sender = emailData.sender || '';
+  const links = Array.isArray(emailData.links) ? emailData.links : [];
+
+  // DEBUG: Log what we're receiving
+  console.log('Analyzing email:', {
+    sender,
+    subject,
+    linkCount: links.length
+  });
+  
+  const checks = await Promise.all([
+    checkLinks(links),
+    checkSender(sender, body),
+    analyzeContent(`${subject} ${body}`)
+>>>>>>> Stashed changes
   ]);
 
   const score = calculateSafetyScore(checks);
@@ -51,6 +71,7 @@ async function analyzeEmailSafety(emailData) {
   };
 }
 
+<<<<<<< Updated upstream
 async function checkLinks(links) {
   const suspicious = [];
   
@@ -58,12 +79,49 @@ async function checkLinks(links) {
     try {
       const url = new URL(link);
       
+=======
+async function checkLinks(links = []) {
+  const suspicious = [];
+  const safeLinks = Array.isArray(links) ? links : [];
+  
+  // FIRST: Check with Google Safe Browsing API
+  const safeBrowsingResult = await safeBrowsingChecker.checkUrls(safeLinks);
+  
+  if (safeBrowsingResult && !safeBrowsingResult.safe) {
+    // Google found threats!
+    safeBrowsingResult.threats.forEach(threat => {
+      suspicious.push({
+        link: threat.url,
+        reason: `🚨 GOOGLE VERIFIED THREAT: This link ${safeBrowsingChecker.getThreatMessage(threat.threatType)}`,
+        severity: 'CRITICAL',
+        source: 'Google Safe Browsing'
+      });
+    });
+  }
+  
+  // THEN: Run our heuristic checks on all links
+  for (const link of safeLinks) {
+    try {
+      const url = new URL(link);
+      
+      // Check if link domain seems unrelated to claimed sender
+      const suspiciousKeywords = ['music', 'shop', 'store', 'game', 'play', 'fun', 'entertainment'];
+      if (suspiciousKeywords.some(keyword => url.hostname.includes(keyword))) {
+        suspicious.push({
+          link,
+          reason: 'Link appears to be for shopping/entertainment, not official business',
+          severity: 'HIGH'
+        });
+      }
+      
+>>>>>>> Stashed changes
       // Check for URL shorteners
       const shorteners = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd'];
       if (shorteners.some(s => url.hostname.includes(s))) {
         suspicious.push({
           link,
-          reason: 'URL shortener detected - hides real destination'
+          reason: 'URL shortener detected - hides real destination',
+          severity: 'MEDIUM'
         });
       }
       
@@ -71,7 +129,8 @@ async function checkLinks(links) {
       if (/^\d+\.\d+\.\d+\.\d+$/.test(url.hostname)) {
         suspicious.push({
           link,
-          reason: 'Uses IP address instead of domain name'
+          reason: 'Uses IP address instead of domain name',
+          severity: 'HIGH'
         });
       }
       
@@ -80,7 +139,8 @@ async function checkLinks(links) {
       if (suspiciousTLDs.some(tld => url.hostname.endsWith(tld))) {
         suspicious.push({
           link,
-          reason: 'Uses suspicious domain extension'
+          reason: 'Uses suspicious domain extension',
+          severity: 'MEDIUM'
         });
       }
       
@@ -89,22 +149,49 @@ async function checkLinks(links) {
       if (parts.length > 4) {
         suspicious.push({
           link,
+<<<<<<< Updated upstream
           reason: 'Too many subdomains'
+=======
+          reason: 'Too many subdomains - possibly trying to confuse you',
+          severity: 'MEDIUM'
+        });
+      }
+      
+      // Check for login/verify/secure in URL
+      const phishingKeywords = ['login', 'verify', 'secure', 'account', 'update', 'confirm', 'validate'];
+      const hasPhishingKeyword = phishingKeywords.some(keyword => 
+        url.hostname.includes(keyword) || url.pathname.includes(keyword)
+      );
+      if (hasPhishingKeyword) {
+        suspicious.push({
+          link,
+          reason: 'URL contains suspicious keywords often used in phishing',
+          severity: 'MEDIUM'
+>>>>>>> Stashed changes
         });
       }
       
     } catch (e) {
       suspicious.push({
         link,
-        reason: 'Malformed or invalid URL'
+        reason: 'Malformed or invalid URL',
+        severity: 'LOW'
       });
     }
   }
   
-  return { type: 'links', suspicious };
+  return { 
+    type: 'links', 
+    suspicious,
+    checkedWithGoogle: safeBrowsingResult !== null
+  };
 }
 
+<<<<<<< Updated upstream
 async function checkSender(sender, body) {
+=======
+async function checkSender(sender = '', body = '') {
+>>>>>>> Stashed changes
   const warnings = [];
   const senderLower = sender.toLowerCase();
   const bodyLower = body.toLowerCase();
@@ -143,6 +230,7 @@ async function checkSender(sender, body) {
   return { type: 'sender', warnings };
 }
 
+<<<<<<< Updated upstream
 function detectTagOffMismatch(sender, body) {
   // Common sign-off patterns in emails
   const signOffPatterns = [
@@ -160,6 +248,50 @@ function detectTagOffMismatch(sender, body) {
     
     // Phone numbers followed by names
     /\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\s*\n\s*([a-z\s.'-]+)/gi
+=======
+function detectTagOffMismatch(sender = '', body = '') {
+  const senderLower = sender.toLowerCase();
+  const bodyLower = body.toLowerCase();
+  if (!senderLower || !bodyLower) {
+    return null;
+  }
+
+  const entities = [
+    'paypal', 'amazon', 'apple', 'microsoft', 'google', 'facebook', 'netflix',
+    'bank of america', 'wells fargo', 'chase', 'irs', 'dmv', 'social security',
+    'walmart', 'ebay', 'parking authority', 'city hall', 'police', 'sheriff'
+  ];
+
+  const senderEntity = entities.find(entity => senderLower.includes(entity));
+  if (!senderEntity) {
+    return null;
+  }
+
+  const conflictingEntity = entities.find(entity => entity !== senderEntity && bodyLower.includes(entity));
+  if (conflictingEntity) {
+    return `Mentions ${conflictingEntity} in the message but sender address references ${senderEntity}`;
+  }
+
+  return null;
+}
+
+async function analyzeContent(text = '') {
+  const redFlags = [];
+  const lowercaseText = text.toLowerCase();
+  
+  // NEW: Absurd/Illegal threats
+  const absurdThreats = [
+    'confiscate your vehicle',
+    'seize your property',
+    'arrest warrant',
+    'legal action will be taken',
+    'will be prosecuted',
+    'law enforcement',
+    'federal offense',
+    'your closest friend', // This is ridiculous and obviously fake
+    'family member will be',
+    'warrant for your arrest'
+>>>>>>> Stashed changes
   ];
   
   let signOffName = null;
@@ -360,6 +492,7 @@ function calculateSafetyScore(checks) {
   
   checks.forEach(check => {
     if (check.type === 'links' && check.suspicious.length > 0) {
+<<<<<<< Updated upstream
       score -= check.suspicious.length * 15;
     }
     if (check.type === 'sender' && check.warnings.length > 0) {
@@ -367,6 +500,38 @@ function calculateSafetyScore(checks) {
     }
     if (check.type === 'content' && check.redFlags.length > 0) {
       score -= check.redFlags.length * 10;
+=======
+      check.suspicious.forEach(item => {
+        // Different penalties based on severity
+        if (item.severity === 'CRITICAL') {
+          score -= 40; // Google-verified threats are major
+        } else if (item.severity === 'HIGH') {
+          score -= 25;
+        } else if (item.severity === 'MEDIUM') {
+          score -= 15;
+        } else {
+          score -= 10;
+        }
+      });
+    }
+    if (check.type === 'sender' && check.warnings.length > 0) {
+      check.warnings.forEach(warning => {
+        if (warning.includes('MAJOR RED FLAG')) {
+          score -= 30;
+        } else {
+          score -= 20;
+        }
+      });
+    }
+    if (check.type === 'content' && check.redFlags.length > 0) {
+      check.redFlags.forEach(flag => {
+        if (flag.includes('MAJOR RED FLAG') || flag.includes('threatening')) {
+          score -= 20;
+        } else {
+          score -= 10;
+        }
+      });
+>>>>>>> Stashed changes
     }
   });
   
@@ -430,4 +595,163 @@ function generateTips(warnings) {
   }
   
   return tips;
+}
+
+async function callAIForAnalysis(emailData) {
+  try {
+    // Get API credentials from storage
+    const config = await chrome.storage.local.get(['aiApiKey', 'aiApiUrl', 'aiModel']);
+    
+    if (!config.aiApiKey || !config.aiApiUrl || !config.aiModel) {
+      console.log('AI analysis disabled - no credentials configured');
+      return null;
+    }
+
+    const prompt = `Analyze this email for phishing/scam indicators. Be specific and elderly-friendly in your explanation.
+
+Email Details:
+- Sender: ${emailData.sender}
+- Subject: ${emailData.subject}
+- Body: ${emailData.body.substring(0, 2000)} ${emailData.body.length > 2000 ? '...(truncated)' : ''}
+- Links: ${emailData.links.join(', ')}
+
+Provide:
+1. Risk level (LOW/MEDIUM/HIGH/CRITICAL)
+2. Simple explanation in 2-3 sentences
+3. Top 3 specific red flags found (or note if legitimate)
+4. One clear action to take
+
+Format as JSON:
+{
+  "riskLevel": "LOW|MEDIUM|HIGH|CRITICAL",
+  "explanation": "Simple explanation here",
+  "redFlags": ["flag1", "flag2", "flag3"],
+  "recommendedAction": "What to do"
+}`;
+
+    const response = await fetch(config.aiApiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.aiApiKey}`
+      },
+      body: JSON.stringify({
+        model: config.aiModel,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a cybersecurity expert helping elderly users identify email scams. Be clear, specific, and avoid jargon.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 500
+      })
+    });
+
+    if (!response.ok) {
+      console.error('AI API error:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const aiResponse = data.choices[0].message.content;
+    
+    // Try to parse JSON response
+    try {
+      const parsed = JSON.parse(aiResponse);
+      return parsed;
+    } catch (e) {
+      // If not JSON, extract key information
+      console.log('AI response not JSON, using raw text');
+      return {
+        riskLevel: aiResponse.includes('HIGH') || aiResponse.includes('CRITICAL') ? 'HIGH' : 'MEDIUM',
+        explanation: aiResponse,
+        redFlags: [],
+        recommendedAction: 'Review carefully before taking action'
+      };
+    }
+
+  } catch (error) {
+    console.error('AI analysis failed:', error);
+    return null;
+  }
+}
+
+// Enhanced analyzeEmailSafety that combines heuristics + AI
+async function analyzeEmailSafety(emailData = {}) {
+  const subject = emailData.subject || '';
+  const body = emailData.body || '';
+  const sender = emailData.sender || '';
+  const links = Array.isArray(emailData.links) ? emailData.links : [];
+
+  console.log('Analyzing email:', {
+    sender,
+    subject,
+    linkCount: links.length
+  });
+  
+  // Run heuristic checks
+  const checks = await Promise.all([
+    checkLinks(links),
+    checkSender(sender, body),
+    analyzeContent(`${subject} ${body}`)
+  ]);
+
+  const heuristicScore = calculateSafetyScore(checks);
+  const warnings = extractWarnings(checks);
+  const tips = generateTips(warnings);
+
+  // Try AI analysis as enhancement
+  let aiAnalysis = null;
+  try {
+    aiAnalysis = await callAIForAnalysis(emailData);
+  } catch (e) {
+    console.log('AI analysis skipped or failed:', e.message);
+  }
+
+  // Combine heuristic and AI results
+  let finalScore = heuristicScore;
+  let finalWarnings = [...warnings];
+  let finalTips = [...tips];
+  
+  if (aiAnalysis) {
+    // Adjust score based on AI risk level
+    const aiRiskMap = {
+      'LOW': 85,
+      'MEDIUM': 55,
+      'HIGH': 30,
+      'CRITICAL': 10
+    };
+    
+    const aiScore = aiRiskMap[aiAnalysis.riskLevel] || 50;
+    
+    // Weighted average: 60% heuristic, 40% AI
+    finalScore = Math.round(heuristicScore * 0.6 + aiScore * 0.4);
+    
+    // Add AI insights to warnings
+    if (aiAnalysis.redFlags && aiAnalysis.redFlags.length > 0) {
+      finalWarnings.push('--- AI Analysis Findings ---');
+      finalWarnings.push(...aiAnalysis.redFlags);
+    }
+    
+    // Add AI recommended action to tips
+    if (aiAnalysis.recommendedAction) {
+      finalTips.unshift(`AI Recommendation: ${aiAnalysis.recommendedAction}`);
+    }
+  }
+
+  return {
+    level: finalScore > 70 ? 'safe' : finalScore > 40 ? 'warning' : 'danger',
+    icon: finalScore > 70 ? '✅' : finalScore > 40 ? '⚠️' : '🚨',
+    title: finalScore > 70 ? 'Looks Safe' : finalScore > 40 ? 'Be Careful' : 'Likely a Scam',
+    score: finalScore,
+    explanation: aiAnalysis?.explanation || generateExplanation(finalScore, finalWarnings),
+    warnings: finalWarnings,
+    tips: finalTips.slice(0, 5), // Limit to top 5 tips
+    aiEnhanced: !!aiAnalysis
+  };
 }

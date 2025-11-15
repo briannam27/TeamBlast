@@ -1,6 +1,10 @@
 {
   "manifest_version": 3,
+<<<<<<< Updated upstream
   "name": "Email Safety Assistant",
+=======
+  "name": "Scam Guard",
+>>>>>>> Stashed changes
   "version": "1.0",
   "description": "Detects spam and phishing emails with simple explanations",
   "permissions": [
@@ -10,7 +14,8 @@
   "host_permissions": [
     "https://mail.google.com/*",
     "https://outlook.live.com/*",
-    "https://outlook.office.com/*"
+    "https://outlook.office.com/*",
+    "https://safebrowsing.googleapis.com/*"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -20,6 +25,7 @@
       "128": "icons/icon128.png"
     }
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": [
