@@ -1,0 +1,89 @@
+/* content/content.css */
+
+.safety-check-btn {
+  background: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-left: 10px;
+}
+
+.safety-check-btn:hover {
+  background: #45a049;
+}
+
+.safety-results {
+  margin: 20px 0;
+  padding: 20px;
+  border-radius: 8px;
+  border-left: 5px solid;
+  font-family: Arial, sans-serif;
+}
+
+.safety-safe {
+  background: #e8f5e9;
+  border-color: #4CAF50;
+}
+
+.safety-warning {
+  background: #fff3e0;
+  border-color: #ff9800;
+}
+
+.safety-danger {
+  background: #ffebee;
+  border-color: #f44336;
+}
+
+.safety-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.safety-icon {
+  font-size: 32px;
+}
+
+.safety-score {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 15px;
+}
+
+.safety-explanation {
+  font-size: 16px;
+  margin-bottom: 15px;
+  line-height: 1.5;
+}
+
+.safety-warnings {
+  margin: 15px 0;
+}
+
+.warning-item {
+  padding: 8px;
+  margin: 5px 0;
+  background: rgba(0,0,0,0.05);
+  border-radius: 4px;
+}
+
+.safety-tips {
+  margin-top: 15px;
+  padding: 15px;
+  background: rgba(255,255,255,0.5);
+  border-radius: 4px;
+}
+
+.safety-tips ul {
+  margin: 10px 0 0 20px;
+}
+
+.safety-tips li {
+  margin: 5px 0;
+  line-height: 1.5;
+}
