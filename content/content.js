@@ -28,10 +28,10 @@ function initializeSafetyChecker() {
 function addSafetyButtons() {
   // Find email headers (Gmail-specific selectors)
   const emailHeaders = document.querySelectorAll('.adn.ads:not(.safety-checked)');
-  
+ 
   emailHeaders.forEach(header => {
     header.classList.add('safety-checked');
-    
+   
     const button = document.createElement('button');
     button.className = 'safety-check-btn';
     button.innerHTML = '<span class="safety-check-icon"></span>Scan Email';
@@ -40,7 +40,7 @@ function addSafetyButtons() {
     const container = document.createElement('div');
     container.className = 'safety-check-container';
     container.appendChild(button);
-    
+   
     const toolbar = header.querySelector('.gE') || header.firstElementChild;
     if (toolbar && toolbar.parentElement) {
       toolbar.parentElement.insertBefore(container, toolbar.nextSibling);
@@ -53,7 +53,7 @@ function addSafetyButtons() {
 function analyzeEmail(emailElement) {
   // Extract email content
   const emailData = extractEmailData(emailElement);
-  
+ 
   // Send to background script for analysis
   chrome.runtime.sendMessage({
     action: 'analyzeEmail',
@@ -69,7 +69,7 @@ function extractEmailData(emailElement) {
   const bodyElement = document.querySelector('.a3s.aiL');
   const senderElement = document.querySelector('.gD');
   const linksElements = document.querySelectorAll('.a3s.aiL a');
-  
+ 
   return {
     subject: subjectElement?.textContent || '',
     body: bodyElement?.textContent || '',
@@ -78,7 +78,6 @@ function extractEmailData(emailElement) {
   };
 }
 
-<<<<<<< HEAD
 function displayResults(result, emailElement) {
   // Create results card
   const emailContainer = emailElement.parentElement;
@@ -92,21 +91,6 @@ function displayResults(result, emailElement) {
   resultsCard.innerHTML = `
     <div class="safety-header">
       <span class="safety-icon">${result.icon}</span>
-=======
-function displayResults(result, emailElement) {
-  // Create results card
-  const emailContainer = emailElement.parentElement;
-  const existingCard = emailContainer.querySelector('.safety-results');
-  if (existingCard) {
-    existingCard.remove();
-  }
-
-  const resultsCard = document.createElement('div');
-  resultsCard.className = `safety-results safety-${result.level}`;
-  resultsCard.innerHTML = `
-    <div class="safety-header">
-      <span class="safety-icon">${result.icon}</span>
->>>>>>> parent of 859dddf (made the checker more strict)
       <h3>${result.title}</h3>
     </div>
     <div class="safety-score">Safety Score: ${result.score}/100</div>
@@ -119,23 +103,13 @@ function displayResults(result, emailElement) {
       <ul>
         ${result.tips.map(t => `<li>${t}</li>`).join('')}
       </ul>
-<<<<<<< HEAD
     </div>
   `;
-  
+ 
   // Insert after email header
   emailContainer.insertBefore(resultsCard, emailElement.nextSibling);
   resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-=======
-    </div>
-  `;
-  
-  // Insert after email header
-  emailContainer.insertBefore(resultsCard, emailElement.nextSibling);
-  resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
->>>>>>> parent of 859dddf (made the checker more strict)
 
 // Initialize when page loads
 if (document.readyState === 'loading') {
