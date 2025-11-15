@@ -1,22 +1,38 @@
-// background/background.js
+// background/background.js - COMPLETE VERSION
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'analyzeEmail') {
     analyzeEmailSafety(request.data)
-      .then(result => sendResponse(result))
+      .then(result => {
+        // Update statistics
+        updateStats(result.level === 'danger');
+        sendResponse(result);
+      })
       .catch(error => sendResponse({
         level: 'error',
         title: 'Analysis Failed',
-        explanation: 'Could not analyze email'
+        explanation: 'Could not analyze email',
+        score: 0,
+        warnings: [],
+        tips: []
       }));
-    return true; // Keep message channel open for async response
+    return true;
   }
 });
+
+function updateStats(isThreat) {
+  chrome.storage.local.get(['emailsChecked', 'threatsBlocked'], (result) => {
+    const emailsChecked = (result.emailsChecked || 0) + 1;
+    const threatsBlocked = (result.threatsBlocked || 0) + (isThreat ? 1 : 0);
+    
+    chrome.storage.local.set({ emailsChecked, threatsBlocked });
+  });
+}
 
 async function analyzeEmailSafety(emailData) {
   const checks = await Promise.all([
     checkLinks(emailData.links),
-    checkSender(emailData.sender),
+    checkSender(emailData.sender, emailData.body),
     analyzeContent(emailData.subject + ' ' + emailData.body)
   ]);
 
@@ -36,46 +52,83 @@ async function analyzeEmailSafety(emailData) {
 }
 
 async function checkLinks(links) {
-  // Check links against VirusTotal, Google Safe Browsing, etc.
-  const suspiciousLinks = [];
+  const suspicious = [];
   
   for (const link of links) {
     try {
-      // Example: Check if link domain matches sender domain
       const url = new URL(link);
-      if (url.hostname.includes('bit.ly') || url.hostname.includes('tinyurl')) {
-        suspiciousLinks.push({
+      
+      // Check for URL shorteners
+      const shorteners = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd'];
+      if (shorteners.some(s => url.hostname.includes(s))) {
+        suspicious.push({
           link,
-          reason: 'Shortened URL - could hide malicious site'
+          reason: 'URL shortener detected - hides real destination'
         });
       }
       
-      // Here you'd call external APIs
-      // const vtResult = await checkVirusTotal(link);
+      // Check for IP addresses
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(url.hostname)) {
+        suspicious.push({
+          link,
+          reason: 'Uses IP address instead of domain name'
+        });
+      }
+      
+      // Check for unusual TLDs
+      const suspiciousTLDs = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top'];
+      if (suspiciousTLDs.some(tld => url.hostname.endsWith(tld))) {
+        suspicious.push({
+          link,
+          reason: 'Uses suspicious domain extension'
+        });
+      }
+      
+      // Check for excessive subdomains
+      const parts = url.hostname.split('.');
+      if (parts.length > 4) {
+        suspicious.push({
+          link,
+          reason: 'Too many subdomains'
+        });
+      }
       
     } catch (e) {
-      console.error('Invalid URL:', link);
+      suspicious.push({
+        link,
+        reason: 'Malformed or invalid URL'
+      });
     }
   }
   
-  return { type: 'links', suspicious: suspiciousLinks };
+  return { type: 'links', suspicious };
 }
 
-async function checkSender(sender) {
+async function checkSender(sender, body) {
   const warnings = [];
+  const senderLower = sender.toLowerCase();
+  const bodyLower = body.toLowerCase();
   
-  // Check for common spoofing patterns
-  if (sender.includes('paypal') && !sender.endsWith('@paypal.com')) {
-    warnings.push('Sender pretends to be PayPal but email doesn\'t match');
+  // Check for company impersonation
+  const companies = {
+    'paypal': '@paypal.com',
+    'amazon': '@amazon.com',
+    'apple': '@apple.com',
+    'microsoft': '@microsoft.com',
+    'google': '@google.com',
+    'facebook': '@facebook.com',
+    'netflix': '@netflix.com'
+  };
+  
+  for (const [company, domain] of Object.entries(companies)) {
+    if (bodyLower.includes(company) && !senderLower.includes(domain)) {
+      warnings.push(`Claims to be from ${company} but email doesn't match official domain`);
+    }
   }
   
-  if (sender.includes('amazon') && !sender.endsWith('@amazon.com')) {
-    warnings.push('Sender pretends to be Amazon but email doesn\'t match');
-  }
-  
-  // Check for lookalike characters (homograph attacks)
-  if (/[а-яА-Я]/.test(sender)) { // Cyrillic characters
-    warnings.push('Email contains unusual characters that look like English');
+  // Check for lookalike characters
+  if (/[а-яА-Я]/.test(sender)) {
+    warnings.push('Email contains unusual characters that look like English letters');
   }
   
   return { type: 'sender', warnings };
@@ -92,7 +145,10 @@ async function analyzeContent(text) {
     'verify immediately',
     'act now',
     'limited time',
-    'suspended account'
+    'suspended account',
+    'confirm your identity',
+    'unusual activity',
+    'expires today'
   ];
   
   urgencyPhrases.forEach(phrase => {
@@ -107,7 +163,9 @@ async function analyzeContent(text) {
     'password',
     'credit card',
     'bank account',
-    'pin number'
+    'pin number',
+    'ssn',
+    'routing number'
   ];
   
   sensitiveRequests.forEach(term => {
@@ -116,8 +174,22 @@ async function analyzeContent(text) {
     }
   });
   
-  // Here you could call Claude API for deeper analysis
-  // const aiAnalysis = await analyzeWithClaude(text);
+  // Suspicious phrases
+  const suspiciousPhrases = [
+    'click here',
+    'verify your account',
+    'confirm your information',
+    'claim your prize',
+    'you have won',
+    'congratulations',
+    'free money'
+  ];
+  
+  suspiciousPhrases.forEach(phrase => {
+    if (lowercaseText.includes(phrase)) {
+      redFlags.push(`Suspicious phrase: "${phrase}"`);
+    }
+  });
   
   return { type: 'content', redFlags };
 }
@@ -171,28 +243,29 @@ function generateExplanation(score, warnings) {
 function generateTips(warnings) {
   const tips = [];
   
-  if (warnings.some(w => w.includes('link') || w.includes('URL'))) {
+  if (warnings.some(w => w.toLowerCase().includes('link') || w.toLowerCase().includes('url'))) {
     tips.push('Don\'t click any links in this email');
     tips.push('Go directly to the website by typing the address yourself');
   }
   
-  if (warnings.some(w => w.includes('sender') || w.includes('email'))) {
+  if (warnings.some(w => w.toLowerCase().includes('sender') || w.toLowerCase().includes('email') || w.toLowerCase().includes('domain'))) {
     tips.push('Verify the sender\'s email address carefully');
     tips.push('Contact the company directly using their official phone number');
   }
   
-  if (warnings.some(w => w.includes('sensitive') || w.includes('password'))) {
+  if (warnings.some(w => w.toLowerCase().includes('sensitive') || w.toLowerCase().includes('password') || w.toLowerCase().includes('information'))) {
     tips.push('Never provide passwords or personal information via email');
     tips.push('Real companies will never ask for this information by email');
   }
   
-  if (warnings.some(w => w.includes('pressure') || w.includes('urgent'))) {
+  if (warnings.some(w => w.toLowerCase().includes('pressure') || w.toLowerCase().includes('urgent') || w.toLowerCase().includes('tactic'))) {
     tips.push('Scammers create fake urgency to make you act without thinking');
     tips.push('Take your time and verify before taking any action');
   }
   
   if (tips.length === 0) {
     tips.push('Stay vigilant with all emails asking for action');
+    tips.push('When in doubt, contact the company directly');
   }
   
   return tips;
