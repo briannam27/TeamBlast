@@ -69,6 +69,7 @@ function extractEmailData(emailElement) {
   };
 }
 
+<<<<<<< HEAD
 function displayResults(result, emailElement) {
   // Create results card
   const resultsCard = document.createElement('div');
@@ -76,6 +77,21 @@ function displayResults(result, emailElement) {
   resultsCard.innerHTML = `
     <div class="safety-header">
       <span class="safety-icon">${result.icon}</span>
+=======
+function displayResults(result, emailElement) {
+  // Create results card
+  const emailContainer = emailElement.parentElement;
+  const existingCard = emailContainer.querySelector('.safety-results');
+  if (existingCard) {
+    existingCard.remove();
+  }
+
+  const resultsCard = document.createElement('div');
+  resultsCard.className = `safety-results safety-${result.level}`;
+  resultsCard.innerHTML = `
+    <div class="safety-header">
+      <span class="safety-icon">${result.icon}</span>
+>>>>>>> parent of 859dddf (made the checker more strict)
       <h3>${result.title}</h3>
     </div>
     <div class="safety-score">Safety Score: ${result.score}/100</div>
@@ -88,12 +104,22 @@ function displayResults(result, emailElement) {
       <ul>
         ${result.tips.map(t => `<li>${t}</li>`).join('')}
       </ul>
+<<<<<<< HEAD
     </div>
   `;
   
   // Insert after email header
   emailElement.parentElement.insertBefore(resultsCard, emailElement.nextSibling);
 }
+=======
+    </div>
+  `;
+  
+  // Insert after email header
+  emailContainer.insertBefore(resultsCard, emailElement.nextSibling);
+  resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+>>>>>>> parent of 859dddf (made the checker more strict)
 
 // Initialize when page loads
 if (document.readyState === 'loading') {
