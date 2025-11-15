@@ -34,19 +34,10 @@ function addSafetyButtons() {
     
     const button = document.createElement('button');
     button.className = 'safety-check-btn';
-    button.innerHTML = '<span class="safety-check-icon"></span>Scan Email';
+    button.textContent = '🛡️ Check Safety';
     button.onclick = () => analyzeEmail(header);
-
-    const container = document.createElement('div');
-    container.className = 'safety-check-container';
-    container.appendChild(button);
     
-    const toolbar = header.querySelector('.gE') || header.firstElementChild;
-    if (toolbar && toolbar.parentElement) {
-      toolbar.parentElement.insertBefore(container, toolbar.nextSibling);
-    } else {
-      header.insertBefore(container, header.firstChild);
-    }
+    header.appendChild(button);
   });
 }
 
@@ -80,12 +71,6 @@ function extractEmailData(emailElement) {
 
 function displayResults(result, emailElement) {
   // Create results card
-  const emailContainer = emailElement.parentElement;
-  const existingCard = emailContainer.querySelector('.safety-results');
-  if (existingCard) {
-    existingCard.remove();
-  }
-
   const resultsCard = document.createElement('div');
   resultsCard.className = `safety-results safety-${result.level}`;
   resultsCard.innerHTML = `
@@ -107,8 +92,7 @@ function displayResults(result, emailElement) {
   `;
   
   // Insert after email header
-  emailContainer.insertBefore(resultsCard, emailElement.nextSibling);
-  resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  emailElement.parentElement.insertBefore(resultsCard, emailElement.nextSibling);
 }
 
 // Initialize when page loads
