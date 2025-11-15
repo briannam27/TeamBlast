@@ -33,6 +33,7 @@ async function analyzeEmailSafety(emailData = {}) {
   const subject = emailData.subject || '';
   const body = emailData.body || '';
   const sender = emailData.sender || '';
+  const senderDisplayName = emailData.senderDisplayName || '';
   const links = Array.isArray(emailData.links) ? emailData.links : [];
 
   // DEBUG: Log what we're receiving
@@ -44,7 +45,7 @@ async function analyzeEmailSafety(emailData = {}) {
   
   const checks = await Promise.all([
     checkLinks(links),
-    checkSender(sender, body),
+    checkSender(sender, body, senderDisplayName),
     analyzeContent(`${subject} ${body}`)
   ]);
 
@@ -137,10 +138,50 @@ async function checkLinks(links = []) {
   return { type: 'links', suspicious };
 }
 
-async function checkSender(sender = '', body = '') {
+async function checkSender(sender = '', body = '', senderDisplayName = '') {
   const warnings = [];
   const senderLower = sender.toLowerCase();
   const bodyLower = body.toLowerCase();
+  const displayLower = (senderDisplayName || '').toLowerCase();
+  
+  // Extract domain from sender
+  const domain = sender.split('@')[1]?.toLowerCase() || '';
+  
+  // NEW: Check for suspicious domain patterns (Firebase, random strings, etc.)
+  const suspiciousDomainPatterns = [
+    /firebaseapp\.com$/,
+    /\.tk$/, /\.ml$/, /\.ga$/, /\.cf$/, /\.gq$/,
+    /\d{5,}/, // Long number sequences (like 564469-234450)
+    /-\d+-\d+\./, // Patterns like -564469-234450
+    /[a-z]{10,}\.com$/, // Random long letter strings
+    /^[^.]*-[^.]*-[^.]*\./ // Multiple hyphens suggesting random generated
+  ];
+  
+  for (const pattern of suspiciousDomainPatterns) {
+    if (pattern.test(domain)) {
+      warnings.push('MAJOR RED FLAG: Sender uses a suspicious, randomly-generated domain name');
+      break;
+    }
+  }
+  
+  // NEW: Check display name vs actual domain mismatch
+  const knownBrands = [
+    'paypal', 'amazon', 'apple', 'microsoft', 'google', 'facebook', 'netflix',
+    'bank of america', 'wells fargo', 'chase', 'walmart', 'ebay',
+    'aaa', 'usps', 'fedex', 'ups', 'dhl', 'irs', 'social security',
+    'geek squad', 'norton', 'mcafee', 'paypal', 'venmo', 'zelle'
+  ];
+  
+  // Check if display name mentions a brand but domain doesn't match
+  for (const brand of knownBrands) {
+    const brandInDisplay = displayLower.includes(brand);
+    const brandInDomain = domain.includes(brand.replace(/\s+/g, ''));
+    
+    if (brandInDisplay && !brandInDomain) {
+      warnings.push(`MAJOR RED FLAG: Display name says "${brand}" but email is from unrelated domain: ${domain}`);
+      break;
+    }
+  }
   
   // Check tag-off mismatch
   const tagOffMismatch = detectTagOffMismatch(sender, body);
@@ -162,7 +203,7 @@ async function checkSender(sender = '', body = '') {
   ];
   
   const isFreeEmail = freeEmailProviders.some(provider => senderLower.includes(provider));
-  const claimsToBeOfficial = govEntities.some(entity => bodyLower.includes(entity));
+  const claimsToBeOfficial = govEntities.some(entity => bodyLower.includes(entity) || displayLower.includes(entity));
   
   if (isFreeEmail && claimsToBeOfficial) {
     warnings.push('MAJOR RED FLAG: Claims to be an official organization but uses a free personal email account (Gmail, Yahoo, etc.)');
@@ -170,7 +211,7 @@ async function checkSender(sender = '', body = '') {
     warnings.push('Sender uses a free personal email account, not a business domain');
   }
   
-  // Check for company impersonation
+  // Check for company impersonation (expanded list)
   const companies = {
     'paypal': '@paypal.com',
     'amazon': '@amazon.com',
@@ -183,12 +224,19 @@ async function checkSender(sender = '', body = '') {
     'wells fargo': '@wellsfargo.com',
     'chase': '@chase.com',
     'walmart': '@walmart.com',
-    'ebay': '@ebay.com'
+    'ebay': '@ebay.com',
+    'aaa': '@aaa.com', // ADDED AAA
+    'geek squad': '@geeksquad.com',
+    'best buy': '@bestbuy.com'
   };
   
-  for (const [company, domain] of Object.entries(companies)) {
-    if (bodyLower.includes(company) && !senderLower.includes(domain)) {
-      warnings.push(`Claims to be from ${company} but email doesn't match official domain`);
+  for (const [company, officialDomain] of Object.entries(companies)) {
+    const mentionedInBody = bodyLower.includes(company);
+    const mentionedInDisplay = displayLower.includes(company);
+    const hasOfficialDomain = senderLower.includes(officialDomain);
+    
+    if ((mentionedInBody || mentionedInDisplay) && !hasOfficialDomain) {
+      warnings.push(`MAJOR RED FLAG: Claims to be from ${company.toUpperCase()} but email doesn't match official domain`);
     }
   }
   

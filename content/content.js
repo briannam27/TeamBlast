@@ -69,12 +69,14 @@ function extractEmailData(emailElement) {
   const subjectElement = document.querySelector('[data-legacy-thread-id] h2');
   const bodyElement = document.querySelector('.a3s.aiL');
   const senderElement = document.querySelector('.gD');
+  const senderNameElement = document.querySelector('.go');
   const linksElements = document.querySelectorAll('.a3s.aiL a');
  
   return {
     subject: subjectElement?.textContent || '',
     body: bodyElement?.textContent || '',
     sender: senderElement?.getAttribute('email') || '',
+    senderDisplayName: senderNameElement?.textContent?.trim() || '', 
     links: Array.from(linksElements).map(a => a.href)
   };
 }
