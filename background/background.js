@@ -29,18 +29,23 @@ function updateStats(isThreat) {
   });
 }
 
-async function analyzeEmailSafety(emailData) {
+async function analyzeEmailSafety(emailData = {}) {
+  const subject = emailData.subject || '';
+  const body = emailData.body || '';
+  const sender = emailData.sender || '';
+  const links = Array.isArray(emailData.links) ? emailData.links : [];
+
   // DEBUG: Log what we're receiving
   console.log('Analyzing email:', {
-    sender: emailData.sender,
-    subject: emailData.subject,
-    linkCount: emailData.links?.length || 0
+    sender,
+    subject,
+    linkCount: links.length
   });
   
   const checks = await Promise.all([
-    checkLinks(emailData.links),
-    checkSender(emailData.sender, emailData.body),
-    analyzeContent(emailData.subject + ' ' + emailData.body)
+    checkLinks(links),
+    checkSender(sender, body),
+    analyzeContent(`${subject} ${body}`)
   ]);
 
   const score = calculateSafetyScore(checks);
@@ -58,10 +63,11 @@ async function analyzeEmailSafety(emailData) {
   };
 }
 
-async function checkLinks(links) {
+async function checkLinks(links = []) {
   const suspicious = [];
+  const safeLinks = Array.isArray(links) ? links : [];
   
-  for (const link of links) {
+  for (const link of safeLinks) {
     try {
       const url = new URL(link);
       
@@ -131,7 +137,7 @@ async function checkLinks(links) {
   return { type: 'links', suspicious };
 }
 
-async function checkSender(sender, body) {
+async function checkSender(sender = '', body = '') {
   const warnings = [];
   const senderLower = sender.toLowerCase();
   const bodyLower = body.toLowerCase();
@@ -194,7 +200,33 @@ async function checkSender(sender, body) {
   return { type: 'sender', warnings };
 }
 
-async function analyzeContent(text) {
+function detectTagOffMismatch(sender = '', body = '') {
+  const senderLower = sender.toLowerCase();
+  const bodyLower = body.toLowerCase();
+  if (!senderLower || !bodyLower) {
+    return null;
+  }
+
+  const entities = [
+    'paypal', 'amazon', 'apple', 'microsoft', 'google', 'facebook', 'netflix',
+    'bank of america', 'wells fargo', 'chase', 'irs', 'dmv', 'social security',
+    'walmart', 'ebay', 'parking authority', 'city hall', 'police', 'sheriff'
+  ];
+
+  const senderEntity = entities.find(entity => senderLower.includes(entity));
+  if (!senderEntity) {
+    return null;
+  }
+
+  const conflictingEntity = entities.find(entity => entity !== senderEntity && bodyLower.includes(entity));
+  if (conflictingEntity) {
+    return `Mentions ${conflictingEntity} in the message but sender address references ${senderEntity}`;
+  }
+
+  return null;
+}
+
+async function analyzeContent(text = '') {
   const redFlags = [];
   const lowercaseText = text.toLowerCase();
   
