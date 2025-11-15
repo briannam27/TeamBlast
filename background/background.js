@@ -65,8 +65,18 @@ async function checkLinks(links) {
     try {
       const url = new URL(link);
       
+      // NEW: Check if link domain seems unrelated to claimed sender
+      // (This would catch imaginedragonsmusic.com for parking tickets!)
+      const suspiciousKeywords = ['music', 'shop', 'store', 'game', 'play', 'fun', 'entertainment'];
+      if (suspiciousKeywords.some(keyword => url.hostname.includes(keyword))) {
+        suspicious.push({
+          link,
+          reason: 'Link appears to be for shopping/entertainment, not official business'
+        });
+      }
+      
       // Check for URL shorteners
-      const shorteners = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd'];
+      const shorteners = ['bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly'];
       if (shorteners.some(s => url.hostname.includes(s))) {
         suspicious.push({
           link,
@@ -83,7 +93,7 @@ async function checkLinks(links) {
       }
       
       // Check for unusual TLDs
-      const suspiciousTLDs = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top'];
+      const suspiciousTLDs = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top', '.pw', '.cc'];
       if (suspiciousTLDs.some(tld => url.hostname.endsWith(tld))) {
         suspicious.push({
           link,
@@ -96,15 +106,17 @@ async function checkLinks(links) {
       if (parts.length > 4) {
         suspicious.push({
           link,
-          reason: 'Too many subdomains'
+          reason: 'Too many subdomains - possibly trying to confuse you'
         });
       }
       
-      // *** NEW: Check for random-looking subdomains with numbers ***
-      if (/[a-z]{6,}-\d+-\d+/.test(url.hostname)) {
+      // NEW: Check for login/verify/secure in URL (phishing sites love these)
+      const phishingKeywords = ['login', 'verify', 'secure', 'account', 'update', 'confirm', 'validate'];
+      const hasPhishingKeyword = phishingKeywords.some(keyword => url.hostname.includes(keyword) || url.pathname.includes(keyword));
+      if (hasPhishingKeyword) {
         suspicious.push({
           link,
-          reason: 'Domain contains random-looking generated text'
+          reason: 'URL contains suspicious keywords often used in phishing'
         });
       }
       
@@ -124,21 +136,36 @@ async function checkSender(sender, body) {
   const senderLower = sender.toLowerCase();
   const bodyLower = body.toLowerCase();
   
-  // Check for free email providers
-  const freeEmailProviders = ['@gmail.com', '@yahoo.com', '@hotmail.com', '@outlook.com', '@aol.com'];
-  if (freeEmailProviders.some(provider => senderLower.includes(provider))) {
+  // Check tag-off mismatch
+  const tagOffMismatch = detectTagOffMismatch(sender, body);
+  if (tagOffMismatch) {
+    warnings.push(tagOffMismatch);
+  }
+  
+  // NEW: Check for government/official entities using free email
+  const govEntities = [
+    'police', 'sheriff', 'department', 'authority', 'government',
+    'irs', 'tax', 'dmv', 'court', 'federal', 'state', 'county',
+    'city hall', 'town', 'municipality', 'agency', 'administration',
+    'parking authority', 'parking enforcement', 'traffic', 'motor vehicle'
+  ];
+  
+  const freeEmailProviders = [
+    '@gmail.com', '@yahoo.com', '@hotmail.com', '@outlook.com',
+    '@aol.com', '@icloud.com', '@mail.com', '@protonmail.com'
+  ];
+  
+  const isFreeEmail = freeEmailProviders.some(provider => senderLower.includes(provider));
+  const claimsToBeOfficial = govEntities.some(entity => bodyLower.includes(entity));
+  
+  if (isFreeEmail && claimsToBeOfficial) {
+    warnings.push('MAJOR RED FLAG: Claims to be an official organization but uses a free personal email account (Gmail, Yahoo, etc.)');
+  } else if (isFreeEmail) {
     warnings.push('Sender uses a free personal email account, not a business domain');
   }
   
-  // Check for hosting platforms being abused
-  const hostingPlatforms = ['firebaseapp.com', 'herokuapp.com', 'netlify.app', 'vercel.app', 'github.io'];
-  if (hostingPlatforms.some(platform => senderLower.includes(platform))) {
-    warnings.push('Sender uses a website hosting platform, not a business email domain');
-  }
-  
-  // Check for company impersonation (EXPANDED LIST)
+  // Check for company impersonation
   const companies = {
-    'aaa': '@aaa.com',
     'paypal': '@paypal.com',
     'amazon': '@amazon.com',
     'apple': '@apple.com',
@@ -149,10 +176,8 @@ async function checkSender(sender, body) {
     'bank of america': '@bankofamerica.com',
     'wells fargo': '@wellsfargo.com',
     'chase': '@chase.com',
-    'irs': '@irs.gov',
-    'usps': '@usps.com',
-    'fedex': '@fedex.com',
-    'ups': '@ups.com'
+    'walmart': '@walmart.com',
+    'ebay': '@ebay.com'
   };
   
   for (const [company, domain] of Object.entries(companies)) {
@@ -173,9 +198,44 @@ async function analyzeContent(text) {
   const redFlags = [];
   const lowercaseText = text.toLowerCase();
   
+  // NEW: Absurd/Illegal threats
+  const absurdThreats = [
+    'confiscate your vehicle',
+    'seize your property',
+    'arrest warrant',
+    'legal action will be taken',
+    'will be prosecuted',
+    'law enforcement',
+    'federal offense',
+    'your closest friend', // This is ridiculous and obviously fake
+    'family member will be',
+    'warrant for your arrest'
+  ];
+  
+  absurdThreats.forEach(threat => {
+    if (lowercaseText.includes(threat)) {
+      redFlags.push(`Contains threatening language: "${threat}" - Real organizations don't threaten like this`);
+    }
+  });
+  
+  // NEW: Deadline pressure tactics
+  const deadlinePatterns = [
+    /(?:by|before|within)\s+(?:november|december|january|february|march|april|may|june|july|august|september|october)\s+\d{1,2}/gi,
+    /(?:by|before|within)\s+\d{1,2}\s+(?:days?|hours?|minutes?)/gi,
+    /(?:expires?|deadline|due)\s+(?:today|tomorrow|tonight)/gi,
+    /must (?:pay|respond|act|click|call) (?:by|before|within)/gi
+  ];
+  
+  deadlinePatterns.forEach(pattern => {
+    if (pattern.test(text)) {
+      redFlags.push('Creates artificial deadline to pressure you into acting quickly');
+    }
+  });
+  
   // Urgency tactics
   const urgencyPhrases = [
     'urgent action required',
+    'immediate action',
     'account will be closed',
     'verify immediately',
     'act now',
@@ -183,7 +243,11 @@ async function analyzeContent(text) {
     'suspended account',
     'confirm your identity',
     'unusual activity',
-    'expires today'
+    'expires today',
+    'final notice',
+    'last warning',
+    'must be paid',
+    'no choice but to'
   ];
   
   urgencyPhrases.forEach(phrase => {
@@ -200,7 +264,10 @@ async function analyzeContent(text) {
     'bank account',
     'pin number',
     'ssn',
-    'routing number'
+    'routing number',
+    'driver\'s license',
+    'date of birth',
+    'account number'
   ];
   
   sensitiveRequests.forEach(term => {
@@ -218,17 +285,29 @@ async function analyzeContent(text) {
     'you have won',
     'congratulations',
     'free money',
-    'been selected',
-    'free',
-    'survey',
-    'complimentary',
-    'feedback',
-    'claim'
+    're-validate',
+    'update your payment'
   ];
   
   suspiciousPhrases.forEach(phrase => {
     if (lowercaseText.includes(phrase)) {
       redFlags.push(`Suspicious phrase: "${phrase}"`);
+    }
+  });
+  
+  // NEW: Check for copy-paste link instructions (huge red flag!)
+  const copyPastePatterns = [
+    'copy and paste',
+    'copy paste',
+    'paste into your browser',
+    'paste the link',
+    'copy the following',
+    'paste this url'
+  ];
+  
+  copyPastePatterns.forEach(phrase => {
+    if (lowercaseText.includes(phrase)) {
+      redFlags.push('MAJOR RED FLAG: Asks you to copy/paste a link - legitimate companies use clickable links');
     }
   });
   
@@ -240,15 +319,34 @@ function calculateSafetyScore(checks) {
   
   checks.forEach(check => {
     if (check.type === 'links' && check.suspicious.length > 0) {
-      score -= check.suspicious.length * 20; // Increased from 15
+      check.suspicious.forEach(item => {
+        // More penalty for major red flags
+        if (item.reason.includes('MAJOR RED FLAG') || item.reason.includes('shopping/entertainment')) {
+          score -= 25;
+        } else {
+          score -= 15;
+        }
+      });
     }
     if (check.type === 'sender' && check.warnings.length > 0) {
-      score -= check.warnings.length * 25; // Increased from 20
+      check.warnings.forEach(warning => {
+        // Heavier penalty for government impersonation
+        if (warning.includes('MAJOR RED FLAG')) {
+          score -= 30;
+        } else {
+          score -= 20;
+        }
+      });
     }
     if (check.type === 'content' && check.redFlags.length > 0) {
-      // More aggressive scoring for multiple red flags
-      const penalty = check.redFlags.length > 3 ? 15 : 10;
-      score -= check.redFlags.length * penalty;
+      check.redFlags.forEach(flag => {
+        // Heavier penalty for threats and copy-paste requests
+        if (flag.includes('MAJOR RED FLAG') || flag.includes('threatening')) {
+          score -= 20;
+        } else {
+          score -= 10;
+        }
+      });
     }
   });
   
