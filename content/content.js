@@ -54,6 +54,13 @@ function analyzeEmail(emailElement) {
   // Extract email content
   const emailData = extractEmailData(emailElement);
   
+  // Validate we have sender data
+  if (!emailData.sender || emailData.sender.length < 3) {
+    alert('Could not extract sender email. Please make sure the email is fully loaded and try again.');
+    console.error('No sender data extracted!');
+    return;
+  }
+  
   // Send to background script for analysis
   chrome.runtime.sendMessage({
     action: 'analyzeEmail',
@@ -64,18 +71,97 @@ function analyzeEmail(emailElement) {
 }
 
 function extractEmailData(emailElement) {
-  // This is simplified - actual selectors depend on email provider
-  const subjectElement = document.querySelector('[data-legacy-thread-id] h2');
-  const bodyElement = document.querySelector('.a3s.aiL');
-  const senderElement = document.querySelector('.gD');
-  const linksElements = document.querySelectorAll('.a3s.aiL a');
+  // Extract subject
+  const subjectElement = document.querySelector('[data-legacy-thread-id] h2, .hP');
   
-  return {
-    subject: subjectElement?.textContent || '',
-    body: bodyElement?.textContent || '',
-    sender: senderElement?.getAttribute('email') || '',
-    links: Array.from(linksElements).map(a => a.href)
+  // Extract body
+  const bodyElement = document.querySelector('.a3s.aiL, [data-message-id] .a3s');
+  
+  // Extract sender - MULTIPLE METHODS to ensure we get it
+  let sender = '';
+  
+  // Method 1: Try the email attribute on .gD element
+  const senderElement = document.querySelector('.gD');
+  if (senderElement) {
+    sender = senderElement.getAttribute('email') || '';
+  }
+  
+  // Method 2: Try the title attribute (shows on hover)
+  if (!sender && senderElement) {
+    sender = senderElement.getAttribute('title') || '';
+  }
+  
+  // Method 3: Try data-hovercard-id attribute
+  if (!sender && senderElement) {
+    sender = senderElement.getAttribute('data-hovercard-id') || '';
+  }
+  
+  // Method 4: Look in the message header area for email pattern
+  if (!sender) {
+    const headerArea = document.querySelector('.gE.iv.gt, .ajy');
+    if (headerArea) {
+      const text = headerArea.textContent;
+      // Extract email from format like "Name <email@domain.com>"
+      const emailMatch = text.match(/<([^>]+@[^>]+)>/) || 
+                        text.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
+      if (emailMatch) {
+        sender = emailMatch[1] || emailMatch[0];
+      }
+    }
+  }
+  
+  // Method 5: Check the expanded "Show details" section
+  if (!sender) {
+    const detailsSection = document.querySelector('.ajy');
+    if (detailsSection) {
+      const emailMatch = detailsSection.textContent.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
+      if (emailMatch) {
+        sender = emailMatch[0];
+      }
+    }
+  }
+  
+  // Method 6: Look for the "mailed-by" or "signed-by" information
+  if (!sender) {
+    const mailedBy = document.querySelector('[data-tooltip*="mailed-by"], [data-tooltip*="signed-by"]');
+    if (mailedBy) {
+      const tooltip = mailedBy.getAttribute('data-tooltip');
+      const emailMatch = tooltip?.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
+      if (emailMatch) {
+        sender = emailMatch[0];
+      }
+    }
+  }
+  
+  // Method 7: Try to get it from the sender's name element text content
+  if (!sender && senderElement) {
+    const text = senderElement.textContent;
+    const emailMatch = text.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
+    if (emailMatch) {
+      sender = emailMatch[0];
+    }
+  }
+  
+  // Extract links
+  const linksElements = document.querySelectorAll('.a3s.aiL a, [data-message-id] a');
+  
+  const extractedData = {
+    subject: subjectElement?.textContent?.trim() || '',
+    body: bodyElement?.textContent?.trim() || '',
+    sender: sender.trim(),
+    links: Array.from(linksElements).map(a => a.href).filter(href => href && !href.startsWith('mailto:'))
   };
+  
+  // Debug logging - helps you see what's being extracted
+  console.log('=== EXTRACTED EMAIL DATA ===');
+  console.log('Sender:', extractedData.sender);
+  console.log('Subject:', extractedData.subject);
+  console.log('Body preview:', extractedData.body.substring(0, 150) + '...');
+  console.log('Links found:', extractedData.links.length);
+  console.log('Sample links:', extractedData.links.slice(0, 3));
+  console.log('===========================');
+  
+  return extractedData;
 }
 
 function displayResults(result, emailElement) {
