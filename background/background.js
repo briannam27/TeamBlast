@@ -148,7 +148,13 @@ async function analyzeContent(text) {
     'suspended account',
     'confirm your identity',
     'unusual activity',
-    'expires today'
+    'expires today',
+    'been selected',
+    'free',
+    'survey',
+    'complimentary',
+    'feedback',
+    'claim'
   ];
   
   urgencyPhrases.forEach(phrase => {
