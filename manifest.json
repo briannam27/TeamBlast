@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Email Safety Assistant",
+  "name": "Scam Guard",
   "version": "1.0",
   "description": "Detects spam and phishing emails with simple explanations",
   "permissions": [
